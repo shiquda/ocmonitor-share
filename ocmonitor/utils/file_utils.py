@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Generator
 from datetime import datetime
@@ -77,10 +78,49 @@ class FileProcessor:
             model_id: Full model ID (e.g., 'qwen/qwen3-coder' or 'claude-sonnet-4-20250514')
             
         Returns:
-            Extracted model name
+            Extracted model name (normalized for pricing lookup)
         """
         if '/' in model_id:
-            return model_id
+            return model_id.lower()
+        return FileProcessor._normalize_model_name(model_id)
+
+    @staticmethod
+    def _normalize_model_name(model_id: str) -> str:
+        """Normalize model name for flexible pricing lookup.
+        
+        Handles various model ID formats:
+        - Strips date suffixes (e.g., -20250514, -20251101)
+        - Normalizes version separators (-X-Y to -X.Y)
+        - Converts to lowercase
+        
+        Args:
+            model_id: Raw model ID from OpenCode
+            
+        Returns:
+            Normalized model name for pricing lookup
+        """
+        model_id = model_id.lower()
+        
+        # Strip date suffixes like -20250514, -20251101, -20241001, etc.
+        model_id = re.sub(r'-\d{8}$', '', model_id)
+        
+        # Normalize version separators: -X-Y to -X.Y
+        # E.g., claude-opus-4-5 -> claude-opus-4.5
+        # Be careful not to create double dots or mess up existing dots
+        model_id = re.sub(r'-(\d+)-(\d+)(?![.\d])', r'-\1.\2', model_id)
+        
+        # Handle special cases for known model families
+        
+        # Claude family: claude-opus-4-5 -> claude-opus-4.5, claude-sonnet-4-5 -> claude-sonnet-4.5
+        model_id = re.sub(r'claude-(opus|sonnet|haiku)-(\d+)-(\d+)', r'claude-\1-\2.\3', model_id)
+        
+        # Gemini family: gemini-3-pro -> gemini-3-pro (keep as is)
+        # GPT family: gpt-5-1 -> gpt-5.1, gpt-5-2 -> gpt-5.2
+        model_id = re.sub(r'gpt-(\d+)-(\d+)', r'gpt-\1.\2', model_id)
+        
+        # Kimi family: kimi-k-2 -> kimi-k2 (remove middle dash)
+        model_id = re.sub(r'kimi-k-(\d+)', r'kimi-k\1', model_id)
+        
         return model_id
 
     @staticmethod

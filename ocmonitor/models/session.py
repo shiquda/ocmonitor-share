@@ -90,11 +90,41 @@ class InteractionFile(BaseModel):
         return Path(self.project_path).name if self.project_path else "Unknown"
 
     def calculate_cost(self, pricing_data: Dict[str, Any]) -> Decimal:
-        """Calculate cost for this interaction."""
-        if self.model_id not in pricing_data:
+        """Calculate cost for this interaction with flexible model name matching.
+        
+        Args:
+            pricing_data: Dictionary of model pricing information
+            
+        Returns:
+            Calculated cost in USD
+        """
+        pricing = None
+        
+        # First try exact match
+        if self.model_id in pricing_data:
+            pricing = pricing_data[self.model_id]
+        else:
+            # Try prefix matching - extract base model name
+            # e.g., claude-opus-4.5-20251101 -> claude-opus-4.5
+            from ..utils.file_utils import FileProcessor
+            normalized = FileProcessor._normalize_model_name(self.model_id)
+            
+            if normalized in pricing_data:
+                pricing = pricing_data[normalized]
+            else:
+                # Try finding a matching key by prefix
+                for key in pricing_data.keys():
+                    if normalized.startswith(key) or key.startswith(normalized):
+                        # Check if they're similar (same model family)
+                        # e.g., "claude-opus-4.5" matches "claude-opus-4.5-extended"
+                        if key.replace('-extended', '') == normalized or \
+                           normalized.replace('-extended', '') == key:
+                            pricing = pricing_data[key]
+                            break
+        
+        if pricing is None:
             return Decimal('0.0')
-
-        pricing = pricing_data[self.model_id]
+        
         cost = Decimal('0.0')
 
         # Convert to cost per million tokens
